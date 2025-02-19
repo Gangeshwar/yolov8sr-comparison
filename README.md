@@ -1,6 +1,7 @@
 # yolov8sr-comparison
 
 
+[![DOI](https://zenodo.org/badge/934837584.svg)](https://doi.org/10.5281/zenodo.14892130)
 
 
 Install below component
