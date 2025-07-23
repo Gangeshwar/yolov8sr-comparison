@@ -3,39 +3,41 @@ from ultralytics import YOLO
 from torch import nn
 
 # --------------------------
-# Residual Block for EDSR
+# Residual Block for WDSR
 # --------------------------
-class ResidualBlock(nn.Module):
-    def __init__(self, channels):
+class WideActivationBlock(nn.Module):
+    def __init__(self, channels, expansion=6):
         super().__init__()
-        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=True)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=True)
+        mid_channels = channels * expansion
+        self.block = nn.Sequential(
+            nn.Conv2d(channels, mid_channels, kernel_size=1, padding=0),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, channels, kernel_size=1, padding=0),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        )
 
-    def forward(self, layer):
-        residual = self.relu(self.conv1(layer))
-        residual = self.conv2(residual)
-        return layer + residual
-
+    def forward(self, x):
+        return x + self.block(x)
+    
 # --------------------------
-# EDSR Super-Resolution Module
+# WDSR Super-Resolution Module
 # --------------------------
-class EDSR(nn.Module):
-    def __init__(self, in_channels=3, num_features=64, num_blocks=5, scale=2):
+class WDSR(nn.Module):
+    def __init__(self, in_channels=3, num_features=64, num_blocks=4, scale=2):
         super().__init__()
         self.head = nn.Conv2d(in_channels, num_features, kernel_size=3, padding=1)
-        self.body = nn.Sequential(*[ResidualBlock(num_features) for _ in range(num_blocks)])
+        self.body = nn.Sequential(*[WideActivationBlock(num_features) for _ in range(num_blocks)])
         self.tail = nn.Sequential(
             nn.Conv2d(num_features, num_features * (scale**2), kernel_size=3, padding=1),
             nn.PixelShuffle(scale),
             nn.Conv2d(num_features, in_channels, kernel_size=3, padding=1)
         )
 
-    def forward(self, layer):
-        layer = self.head(layer)
-        layer = self.body(layer)
-        layer = self.tail(layer)
-        return layer
+    def forward(self, x):
+        x = self.head(x)
+        x = self.body(x)
+        x = self.tail(x)
+        return x
 
 # --------------------------
 # InceptionNeXt Block (Custom Replacement for C2F)
@@ -71,9 +73,9 @@ class InceptionNeXtBlock(nn.Module):
 class YOLOv8SR(YOLO):   
     """
 
-    YOLOv8SR: YOLOv8 extended with EDSR super-resolution and InceptionNeXt backbone block.
+    YOLOv8SR: YOLOv8 extended with WDSR super-resolution and InceptionNeXt backbone block.
     This class inherits from the Ultralytics YOLO model and extends it by adding
-    an EDSR super-resolution module. It's suitable for scenarios where enhanced image
+    an WDSR super-resolution module. It's suitable for scenarios where enhanced image
     resolution is crucial along with object detection, such as satellite imagery,
     medical imaging, or high-quality surveillance.
 
@@ -83,8 +85,8 @@ class YOLOv8SR(YOLO):
         # Initialize the base YOLO model
         super().__init__(pretrained_weights)
         
-        # Define EDSR module
-        self.edsr = EDSR()
+        # Define WDSR module
+        self.wdsr = WDSR()
 
         # Replace one of the C2F blocks in the backbone with InceptionNeXt
         # You can inspect which layer to replace via: print(self.model.model)
@@ -104,8 +106,8 @@ class YOLOv8SR(YOLO):
             print(f"Warning: Expected 'conv' layer at index {c2f_layer_index}, but not found.")
   
     def forward(self, layer):
-        # Apply EDSR to enhance input resolution
-        layer = self.edsr(layer)
+        # Apply WDSR to enhance input resolution
+        layer = self.wdsr(layer)
         
         # Pass through YOLOv8 model
         layer = super().forward(layer)
